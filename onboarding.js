@@ -65,6 +65,51 @@ function onbApiData(e, data) {
 	return data
 }
 
+// Setup Triggers
+function onbTriggers() {
+	document.querySelectorAll("[data-onb-trigger]").forEach(t => {
+		let ds = t.dataset;
+		let tr = ds.onbTrigger.split("=");
+		if(tr.length == 2 && ds.onbTarget) {
+			// click
+			if(tr[1] == "click") {
+				t.addEventListener(tr[0], () => {
+					document.querySelectorAll(ds.onbTarget).forEach(target => {target.click()})
+				})
+			}
+			// radio
+			else if(tr[1] == "radio") {t.addEventListener(tr[0], () => {
+				document.querySelectorAll(ds.onbTarget).forEach(target => {
+					let tDs = target.dataset;
+					// section
+					if(tDs.onbId == ds.onbId) {
+						//template
+						if(ds.onbTemplateId) {
+							if(tDs.onbTemplateId == ds.onbTemplateId) {target.checked = true}
+							else {target.checked = false}
+						}
+						else {
+							if(target.checked) {target.checked = false}
+							else {target.checked = true}
+						}
+						// group
+						if(ds.onbGroup && tDs.onbGroup && tDs.onbGroup != ds.onbGroup) {
+							target.checked = false}
+					}
+				})
+			})}
+			// uncheck
+			else if(tr[1] == "uncheck") {
+				t.addEventListener(tr[0], () => {
+					document.querySelectorAll(ds.onbTarget).forEach(target => {
+						if(target.dataset.onbId == ds.onbId) {target.checked = false}
+					})
+				})
+			}
+		}
+	})
+}
+
 // Conditional Visibility
 function onbConditions(e) {
 	let id; if(e.dataset.onbId) {id = e.dataset.onbId} else {return}
@@ -83,12 +128,15 @@ function onbConditions(e) {
 				let multiKey = split[1];
 				keys.pop();
 				for(let i = 0; i < localStorage.length; i++) {
-					if(localStorage.key(i).includes(multiKey)) {
+					if(localStorage.key(i).includes(multiKey) &&
+						localStorage.key(i).includes(id)) {
 						keys.push(localStorage.key(i))}}
 			}
 			let multiPass = [];
 			keys.forEach(key => {
 				if(localStorage.getItem(key) == pair[1]) {multiPass.push(true)}
+				else if(pair[1].includes("!")) {
+					if(localStorage.getItem(key) != pair[1].replace("!", "")) {multiPass.push(true)}}
 				else if(pair[1] == "TRUE") {if(localStorage.getItem(key)) {multiPass.push(true)}}
 				else if(pair[1] == "FALSE") {if(!localStorage.getItem(key)) {multiPass.push(true)}}
 				else {multiPass.push(false)}
@@ -111,13 +159,17 @@ function onbConditions(e) {
 // Populate Input
 function onbPopInput(input, data) {
 	let ds = input.dataset;
-	let sValue = localStorage.getItem(onbSKey(ds.onbInput, ds.onbId));
 	let oData; if(data != undefined) {oData = onbApiData(input, data)}
+	let sValue;
+	if(ds.onbId) {sValue = localStorage.getItem(onbSKey(ds.onbInput, ds.onbId))}
+	else {sValue = localStorage.getItem(onbSKey(ds.onbInput))}
 	// text
 	if(ds.onbType == "text") {if(sValue) {input.value = sValue}}
 	// checkbox
 	else if(ds.onbType == "checkbox") {
 		if(sValue && sValue == "true") {input.checked = true}
+		else if(sValue && sValue == "false") {input.checked = false}
+		else if(sValue == input.value) {input.checked = true}
 		else {input.checked = false}}
 	// from data
 	else if(oData != undefined) {
@@ -150,40 +202,58 @@ function onbPopInput(input, data) {
 
 // Populate
 function onbPopulate(data) {
-	document.querySelectorAll("[data-onb='section']").forEach((section, id) => {
+	document.querySelectorAll("[data-onb='section']").forEach((section, sId) => {
+		// templates
 		section.querySelectorAll("[data-onb='template']").forEach(template => {
-			template.setAttribute("data-onb-id", id);
 			let ds = template.dataset;
 			let tData = onbApiData(template, data);
-			if(Array.isArray(tData)) {tData.forEach((oData, i) => {
-				let tmp = template;
-				if(i > 0) {
-					tmp = template.cloneNode(true);
-					template.parentNode.appendChild(tmp)
-				}
-				tmp.querySelectorAll("[data-onb-api-key]").forEach(e => {
-					e.setAttribute("data-onb-id", id);
-					let ds = e.dataset;
-					let eData = onbApiData(e, oData);
-					if(ds.onbType == "text") {e.textContent = eData}
-					else if(ds.onbType == "image") {e.src = eData}
-					else if(ds.onbType == "radio") {e.value = eData; onbPopInput(e, oData)}
-					else if(ds.onbType == "checkbox") {
-						ds.onbInput = ds.onbInputTemplate.replace("template", eData);
-						onbPopInput(e, oData)}
+			if(Array.isArray(tData)) {tData.forEach((oData, tId) => {
+				let t = template;
+				if(tId > 0) {t = template.cloneNode(true); template.parentNode.appendChild(t)}
+				t.querySelectorAll("*").forEach(e => {
+					if(e.dataset) {
+						e.setAttribute("data-onb-template-id", tId);
+						if(e.dataset.onbApiKey) {
+							let ds = e.dataset;
+							let eData = onbApiData(e, oData);
+							if(ds.onbType == "text") {e.textContent = eData}
+							else if(ds.onbType == "image") {e.src = eData}
+							else if(ds.onbType == "radio") {e.value = eData; onbPopInput(e, oData)}
+							else if(ds.onbType == "checkbox") {
+								e.value = eData;
+								if(ds.onbInputTemplate) {
+									ds.onbInput = ds.onbInputTemplate.replace("template", eData)}
+								onbPopInput(e, oData)
+							}
+						}
+					}
 				})
 			})}
-		})
-	});
-	// inputs
-	document.querySelectorAll("[data-onb-input]").forEach(input => {
-		onbPopInput(input, data)})
+		});
+		// inputs & triggers
+		document.querySelectorAll("[data-onb-input]").forEach(input => {onbPopInput(input, data)});
+		onbTriggers()
+	})
 }
 
 // GET API data
 document.querySelectorAll("[data-onb-api]").forEach(e => {
-	onbApiRequest(e.dataset.onbApi, (err, data) => {
-		if(err !== null) {console.log("Something went wrong: " + err)}
+	let url = e.dataset.onbApi;
+	// formatting
+	if(url.includes("portions")) {
+		url += "?dog_ids=";
+		let count = 0;
+		for(let i = 0; i < 10; i++) {
+			if(localStorage.getItem(onbSKey("id", i))) {
+				if(count == 0) {url += localStorage.getItem(onbSKey("id", i))}
+				else {url += "," + localStorage.getItem(onbSKey("id", i))}
+				count++
+			}
+			//else {break}
+		}
+	}
+	onbApiRequest(url, (err, data) => {
+		if(err != null) {console.log("Something went wrong: " + err)}
 		else {onbPopulate(data)}
 	}, "GET")
 });
@@ -197,7 +267,6 @@ function onbSubmitInputs(next) {
 	document.querySelectorAll("[data-onb='section']").forEach(section => {
 		reqData.dogs.push({"id": Number(section.dataset.onbId)})
 	});
-	console.log(reqData);
 	// inputs
 	document.querySelectorAll("[data-onb-input]").forEach(input => {
 		if(input.value != undefined && input.value != "") {
@@ -209,8 +278,6 @@ function onbSubmitInputs(next) {
 				if(ds.onbInputOptions.includes("&")) {
 					let x = ds.onbInputOptions;
 					while(x.includes("&")) {
-						console.log(x);
-						console.log("SPLIT");
 						let split = x.split("&");
 						options.push(split[0]);
 						if(!split[1].includes("&")) {
@@ -220,8 +287,8 @@ function onbSubmitInputs(next) {
 				}
 				else {options.push(ds.onbInputOptions)}
 			}
-			console.log(options);
 			let dogInput = true;
+			let inputType = "";
 			let sValue = input.value;
 			let dValue = input.value;
 			options.forEach(option => {
@@ -229,23 +296,31 @@ function onbSubmitInputs(next) {
 					if(ds.onbType == "select") {
 						dValue = input.options[input.selectedIndex].textContent}
 				}
-				if(option == "user") {dogInput = false}
+				else if(option == "user") {dogInput = false}
+				else if(option == "value") {inputType = "value"}
+				else if(option == "null") {inputType = "null"}
 			});
-			console.log("dogInput: " + dogInput);
-			console.log("dValue: " + dValue);
-			console.log("sValue: " + sValue);
 			// data & storage
 			let store = true;
 			let data = reqData;
-			console.log(data);
 			if(dogInput) {data.dogs.forEach(dog => {
 				if(id != undefined && id == dog.id) {data = dog}})}
-			console.log(data);
 			// radio buttons
 			if(ds.onbType == "radio") {
-				let rData = onbApiData(input, data);
-				if(rData == undefined) {rData = null}
+				if(inputType == "null" && !data.hasOwnProperty(ds.onbInput)) {
+					if(id == undefined) {localStorage.setItem(onbSKey(ds.onbInput), "false")}
+					else {localStorage.setItem(onbSKey(ds.onbInput, id), "false")}
+					data[ds.onbInput] = null
+				}
 				if(input.checked == false) {store = false}
+			}
+			// checkboxes
+			if(ds.onbType == "checkbox") {
+				if(inputType == "value") {
+					if(input.checked == false) {store = false}
+				}
+				else if(input.checked == true) {sValue = "true"; dValue = "true"}
+				else {sValue = "false"; dValue = "false"}
 			}
 			// store
 			if(store) {
@@ -253,13 +328,6 @@ function onbSubmitInputs(next) {
 				if(dValue == "true") {dValue = true}
 				else if(dValue == "false") {dValue = false}
 				else if(!isNaN(dValue)) {dValue = Number(dValue)}
-				if(ds.onbType == "checkbox") {
-					if(input.checked == true) {
-						dValue = true; sValue = true}
-					else {dValue = false; sValue = false}
-				}
-				console.log("dValue: " + dValue);
-				console.log("sValue: " + sValue);
 				// store
 				if(id == undefined) {localStorage.setItem(onbSKey(ds.onbInput), sValue)}
 				else {localStorage.setItem(onbSKey(ds.onbInput, id), sValue)}
@@ -267,13 +335,17 @@ function onbSubmitInputs(next) {
 			}
 		}
 	});
-	console.log(reqData);
-	// ids
-	reqData.dogs.forEach(dog => {
+	// ids & checks
+	reqData.dogs.forEach((dog, i) => {
+		// ids
 		if(localStorage.getItem(onbSKey("id", dog.id))) {
 			dog.id = Number(localStorage.getItem(onbSKey("id", dog.id)))}
 		else {delete dog.id}
+		// if dog empty
+		if(Object.keys(dog).length == 0) {delete reqData.dogs[i]}
+		else if(Object.keys(dog).length == 1 && Object.keys(dog)[0] == "id") {delete reqData.dogs[i]}
 	});
+	if(reqData.dogs.length == 0 || reqData.dogs[0] == undefined) {delete reqData.dogs}
 	// request
 	let reqUrl = document.querySelector("[data-onb-submit]").dataset.onbSubmit;
 	let reqType = "POST";
@@ -281,15 +353,14 @@ function onbSubmitInputs(next) {
 		reqUrl += "/" + localStorage.getItem(onbSKey("UserId"));
 		reqType = "PUT"
 	}
-	console.log(reqType);
 	console.log(reqUrl);
+	console.log(reqType);
 	console.log(reqData);
 	onbApiRequest(reqUrl, (err, data) => {
 		if(err != null) {console.log("Something went wrong: " + err)}
 		else {
 			if(data == null) {if(next != undefined && next.hasAttribute("data-onb-link")) {
 				window.location.href = next.dataset.onbLink}}
-			console.log(data);
 			if(data.temp_user_id) {localStorage.setItem(onbSKey("UserId"), data.temp_user_id)}
 			if(data.temp_dog_ids) {data.temp_dog_ids.forEach((dogId, i) => {
 				localStorage.setItem(onbSKey("id", i), dogId)
@@ -354,7 +425,7 @@ function onbAddDog() {
 		dog = localStorage.getItem(onbSKey("name", id))}
 	newSection.querySelectorAll("[data-onb='name']").forEach(name => {name.textContent = dog});
 	// inputs
-	newSection.querySelectorAll("[data-onb-input]").forEach(input => {
+	newSection.querySelectorAll("[data-onb-id]").forEach(input => {
 		let ds = input.dataset; ds.onbId = id;
 		let sValue = localStorage.getItem(onbSKey(ds.onbInput, ds.onbId));
 		// text
@@ -375,8 +446,11 @@ function onbAddDog() {
 		}
 		// select
 		else if(ds.onbType == "select") {
-			if(sValue) {input.options.forEach(option => {
-				if(option.value == sValue) {option.selected = true}})}
+			if(sValue) {
+				for(let i = 0; i < input.options.length; i++) {
+					let option = input.options[i];
+					if(option.value == sValue) {option.selected = true}
+				}}
 			else {input.options[0].selected = true}
 		}
 	});
@@ -387,16 +461,22 @@ function onbAddDog() {
 		if(ds.onbButton == "dog-") {
 			button.addEventListener("click", () => {onbRemoveDog(ds.onbId)})}
 	});
+	// conditions
+	newSection.querySelectorAll("[data-onb-conditions]").forEach(e => {onbConditions(e)});
 	// set
 	document.querySelector("[data-onb='section']").parentNode.appendChild(newSection);
-	localStorage.setItem(onbSKey("ActiveDogs"), id + 1)
+	localStorage.setItem(onbSKey("ActiveDogs"), id + 1);
+	onbTriggers()
 }
 
 /////////////////////
 // SETUP - INITIAL //
 /////////////////////
 
-// Initial Section Ids
+// Disable form submissions
+Webflow.push(function() {$("form[data-onb='form']").submit(function() {return false})});
+
+// Initial Section
 document.querySelectorAll("[data-onb='section']").forEach((section, id) => {
 	section.setAttribute("data-onb-id", id);
 	// names
@@ -405,12 +485,20 @@ document.querySelectorAll("[data-onb='section']").forEach((section, id) => {
 		section.querySelectorAll("[data-onb='name']").forEach(name => {
 			name.textContent = dog})}
 	// ids
-	section.querySelectorAll("[data-onb-input]").forEach(input => {
-		input.setAttribute("data-onb-id", id)});
-	section.querySelectorAll("[data-onb-button]").forEach(button => {
-		button.setAttribute("data-onb-id", id)});
-	section.querySelectorAll("[data-onb-conditions]").forEach(e => {
-		e.setAttribute("data-onb-id", id)})
+	section.querySelectorAll("*").forEach(e => {
+		e.setAttribute("data-onb-id", id)});
+	// groups
+	section.querySelectorAll("[data-onb=group]").forEach((group, gId) => {
+		group.querySelectorAll("[data-onb-id]").forEach(e => {
+			e.setAttribute("data-onb-group", gId)})});
+	// text inputs
+	section.querySelectorAll("[data-onb-input][data-onb-type='text']").forEach(text => {
+		let ds = text.dataset;
+		if(ds.onbId && localStorage.getItem(onbSKey(ds.onbInput, ds.onbId))) {
+			text.value = localStorage.getItem(onbSKey(ds.onbInput, ds.onbId))}
+		else if(localStorage.getItem(onbSKey(ds.onbInput))) {
+			text.value = localStorage.getItem(onbSKey(ds.onbInput))}
+	})
 });
 
 // Conditional Visibility
@@ -429,8 +517,16 @@ document.querySelectorAll("[data-onb-button]").forEach(button => {
 
 // Additional Sections
 if(localStorage.getItem(onbSKey("ActiveDogs"))) {
-	let activeDogs = localStorage.getItem(onbSKey("ActiveDogs"));
-	localStorage.setItem(onbSKey("ActiveDogs"), 1);
-	for(let i = 1; i < activeDogs; i++) {onbAddDog()}
+	let ds = document.querySelector("[data-onb='section']").dataset;
+	if(ds.onbSection && ds.onbSection.includes("user")) {}
+	else {
+		let activeDogs = localStorage.getItem(onbSKey("ActiveDogs"));
+		localStorage.setItem(onbSKey("ActiveDogs"), 1);
+		for(let i = 1; i < activeDogs; i++) {onbAddDog()}
+	}
 }
-else {localStorage.setItem(onbSKey("ActiveDogs"), 1)}
+else {localStorage.setItem(onbSKey("ActiveDogs"), 1); onbTriggers()}
+
+// referral codes
+if(location.href.includes("?")) {
+	localStorage.setItem(onbSKey("referral_code"), location.href.split("?")[1].split("=")[1])}
